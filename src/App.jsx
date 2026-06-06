@@ -4,6 +4,7 @@ import DietarySection  from './components/form/DietarySection'
 import ActivitySection from './components/form/ActivitySection'
 import PlanSection     from './components/form/PlanSection'
 import JsonExportStep  from './components/output/JsonExportStep'
+import { validateStep } from './utils/validateStep'
 import './App.css'
 
 const INITIAL_FORM = {
@@ -18,19 +19,47 @@ const STEPS = ['Profilo', 'Dieta', 'Attività', 'Piano']
 function App() {
   const [step, setStep]         = useState(0)
   const [formData, setFormData] = useState(INITIAL_FORM)
-  const [exported, setExported] = useState(false)  // true = mostra schermata export
+  const [exported, setExported] = useState(false)
+  const [errors, setErrors]     = useState({})     // errori di validazione
+  const [shake, setShake]       = useState(false)  // animazione errore
 
   function updateSection(section, newValues) {
     setFormData(prev => ({ ...prev, [section]: { ...prev[section], ...newValues } }))
+    // Pulisce l'errore del campo appena modificato
+    if (Object.keys(newValues)[0] in errors) {
+      setErrors(prev => { const e = { ...prev }; delete e[Object.keys(newValues)[0]]; return e })
+    }
   }
 
-  function goNext() { setStep(s => Math.min(s + 1, 3)) }
-  function goPrev() { setStep(s => Math.max(s - 1, 0)) }
+  function goNext() {
+    const { valid, errors: newErrors } = validateStep(step, formData)
+    if (!valid) {
+      setErrors(newErrors)
+      // Animazione "shake" per segnalare l'errore
+      setShake(true)
+      setTimeout(() => setShake(false), 500)
+      return
+    }
+    setErrors({})
+    setStep(s => Math.min(s + 1, 3))
+  }
+
+  function goPrev() {
+    setErrors({})
+    setStep(s => Math.max(s - 1, 0))
+  }
+
+  function handleExport() {
+    const { valid, errors: newErrors } = validateStep(step, formData)
+    if (!valid) { setErrors(newErrors); return }
+    setExported(true)
+  }
 
   function handleReset() {
     setExported(false)
     setStep(0)
     setFormData(INITIAL_FORM)
+    setErrors({})
   }
 
   if (exported) {
@@ -54,18 +83,57 @@ function App() {
 
       <nav className="step-nav">
         {STEPS.map((label, i) => (
-          <div key={label} className={`step-dot ${i === step ? 'active' : ''} ${i < step ? 'done' : ''}`}>
+          <div
+            key={label}
+            className={`step-dot ${i === step ? 'active' : ''} ${i < step ? 'done' : ''}`}
+            onClick={() => i < step && (setErrors({}), setStep(i))}
+            style={{ cursor: i < step ? 'pointer' : 'default' }}
+          >
             <span className="step-number">{i < step ? '✓' : i + 1}</span>
             <span className="step-label">{label}</span>
           </div>
         ))}
       </nav>
 
-      <main className="app-main">
-        {step === 0 && <PersonalSection  data={formData.personal} onChange={v => updateSection('personal', v)} />}
-        {step === 1 && <DietarySection   data={formData.dietary}  onChange={v => updateSection('dietary',  v)} />}
-        {step === 2 && <ActivitySection  data={formData.activity} onChange={v => updateSection('activity', v)} />}
-        {step === 3 && <PlanSection      data={formData.plan}     onChange={v => updateSection('plan',     v)} />}
+      <main className={`app-main ${shake ? 'shake' : ''}`}>
+
+        {/* Errori generali */}
+        {Object.keys(errors).length > 0 && (
+          <div className="error-banner">
+            ⚠️ Compila i campi evidenziati per continuare
+          </div>
+        )}
+
+        <div className="step-fade" key={step}>
+          {step === 0 && (
+            <PersonalSection
+              data={formData.personal}
+              onChange={v => updateSection('personal', v)}
+              errors={errors}
+            />
+          )}
+          {step === 1 && (
+            <DietarySection
+              data={formData.dietary}
+              onChange={v => updateSection('dietary', v)}
+              errors={errors}
+            />
+          )}
+          {step === 2 && (
+            <ActivitySection
+              data={formData.activity}
+              onChange={v => updateSection('activity', v)}
+              errors={errors}
+            />
+          )}
+          {step === 3 && (
+            <PlanSection
+              data={formData.plan}
+              onChange={v => updateSection('plan', v)}
+              errors={errors}
+            />
+          )}
+        </div>
 
         <div className="form-nav">
           {step > 0 && (
@@ -73,7 +141,7 @@ function App() {
           )}
           {step < 3
             ? <button className="btn-primary" onClick={goNext}>Avanti →</button>
-            : <button className="btn-primary btn-generate" onClick={() => setExported(true)}>
+            : <button className="btn-primary btn-generate" onClick={handleExport}>
                 📄 Genera il mio JSON
               </button>
           }
